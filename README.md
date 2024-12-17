@@ -24,6 +24,8 @@ p           paste item as sibling
 P           paste item as child 
 
 + | -       increase | decrease priority
+
+C-s         open sort menu 
 ```
 
 # Screenshot
