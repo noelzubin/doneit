@@ -1,0 +1,18 @@
+[package]
+name = "doneit"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+chrono = "0.4.38"
+color-eyre = "0.6.3"
+crossterm = { version = "0.28.1", features = ["serde"] }
+directories = "5.0.1"
+ratatui = "0.29.0"
+rusqlite = { version = "0.32.1", features = ["chrono"] }
+serde = { version = "1.0.215", features = ["derive"] }
+serde_json = "1.0.133"
+slotmap = "1.0.7"
+tui-input = "0.11.1"
+unicode-width = "0.2.0"
+uuid = { version = "1.11.0", features = ["v4"] }
