@@ -6,6 +6,7 @@ use std::sync::mpsc;
 use std::{collections::HashSet, fs};
 use uuid::Uuid;
 
+use crate::colors::Theme;
 use crate::store::{self, SlotMapStore};
 use crate::store::{Store, TodoItem, WorkspaceItem};
 use color_eyre::Result;
@@ -51,11 +52,11 @@ enum SortingItem {
 
 impl App {
     /// Construct a new instance of [`App`].
-    pub fn new(store: Store) -> Self {
+    pub fn new(store: Store, theme: Theme) -> Self {
         let (tx, rx) = mpsc::channel();
         let slot_map_store = store::SlotMapStore::from_store(&store);
         Self {
-            theme: crate::colors::Theme::new(),
+            theme,
             running: false,
             new_editing_id: None,
             slot_tree_state: SlotTreeState::default(),
@@ -154,7 +155,7 @@ impl App {
                     item = item.style(
                         Style::default()
                             .fg(self.theme.text)
-                            .bg(self.theme.higlight_bg),
+                            .bg(self.theme.item_highlight),
                     );
                 }
             }
@@ -187,7 +188,7 @@ impl App {
                         list_item = list_item.style(
                             Style::default()
                                 .fg(self.theme.text)
-                                .bg(self.theme.higlight_bg),
+                                .bg(self.theme.item_highlight),
                         );
                     }
                 }
@@ -213,16 +214,16 @@ impl App {
         let styles = if active {
             (
                 Style::default()
-                    .fg(self.theme.text_black)
-                    .bg(self.theme.block_highlight),
-                Style::default().fg(self.theme.block_highlight),
+                    .fg(self.theme.text_dark)
+                    .bg(self.theme.active_highlight),
+                Style::default().fg(self.theme.active_highlight),
             )
         } else {
             (
                 Style::default()
                     .fg(self.theme.highlight_text_secondary)
-                    .bg(self.theme.block_faded),
-                Style::default().fg(self.theme.block_faded),
+                    .bg(self.theme.inactive_highlight),
+                Style::default().fg(self.theme.inactive_highlight),
             )
         };
 
@@ -246,7 +247,7 @@ impl App {
                 .style(Style::new().fg(Color::Yellow));
 
             if !todo.pending {
-                todo_desc = todo_desc.style(Style::new().fg(self.theme.faded_text).crossed_out());
+                todo_desc = todo_desc.style(Style::new().fg(self.theme.text_completed).crossed_out());
                 pre_desc = pre_desc.style(Style::new().fg(Color::Green));
             }
 
@@ -275,7 +276,7 @@ impl App {
             let mut row = Row::new(vec![todo_line, priority.into()]);
             if let Some(selected) = self.slot_tree_state.selected_todo {
                 if selected == t.key {
-                    row = row.style(Style::default().bg(self.theme.higlight_bg));
+                    row = row.style(Style::default().bg(self.theme.item_highlight));
                 }
             }
 
@@ -305,7 +306,7 @@ impl App {
                 row = row.style(
                     Style::default()
                         .fg(self.theme.text)
-                        .bg(self.theme.higlight_bg),
+                        .bg(self.theme.item_highlight),
                 );
                 rows[ind] = row;
 
@@ -1139,7 +1140,7 @@ impl App {
                         }
                     }
                 }
-                (_, KeyCode::Char('-')) => {
+                (_, KeyCode::Char('_')) => {
                     if let Some(selected) = self.slot_tree_state.selected_todo {
                         let todo = self.slot_map_store.todos_map.get_mut(selected).unwrap();
                         if todo.urgency > 0 {

@@ -13,9 +13,10 @@ fn main() -> color_eyre::Result<()> {
     let terminal = ratatui::init();
     let data_path =  config::get_data_file_path()?;
     let store = Store::from_json_file(&data_path).unwrap_or_default();
-    let mut app = App::new(store);
+    let theme = config::get_theme();
+    let mut app = App::new(store, theme);
     let result = app.run(terminal);
     ratatui::restore();
-    app.get_store().to_json_file(&data_path);
+    app.get_store().to_json_file(&data_path)?;
     result
 }
