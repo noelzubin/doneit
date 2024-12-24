@@ -1,5 +1,5 @@
 use ratatui::text::Span;
-use ratatui::widgets::{Padding, Row, Table};
+use ratatui::widgets::{ListState, Padding, Row, Table, TableState};
 use slotmap::DefaultKey;
 use std::path::PathBuf;
 use std::sync::mpsc;
@@ -207,7 +207,18 @@ impl App {
 
         let widget = List::new(items).block(block);
 
-        frame.render_widget(widget, area);
+        let mut list_state = ListState::default();
+        if let Some(selected_workspace) = self.slot_tree_state.selected_workspace {
+            let index = self
+                .slot_tree_state
+                .ws_tree
+                .iter()
+                .position(|w| w.key == selected_workspace)
+                .unwrap();
+            list_state.select(Some(index));
+        }
+
+        frame.render_stateful_widget(widget, area, &mut list_state);
     }
 
     fn get_title_block(&self, title: &str, active: bool) -> Block {
@@ -323,7 +334,19 @@ impl App {
         let widths = [Constraint::Fill(5), Constraint::Length(2)];
 
         let widget = Table::new(rows, widths).block(block);
-        frame.render_widget(widget, area);
+
+        let mut table_state = TableState::default();
+        if let Some(selected_todo) = self.slot_tree_state.selected_todo {
+            let index = self
+                .slot_tree_state
+                .todo_tree
+                .iter()
+                .position(|w| w.key == selected_todo)
+                .unwrap();
+            table_state.select(Some(index));
+        }
+
+        frame.render_stateful_widget(widget, area, &mut table_state);
     }
 
     fn handle_events(&mut self) -> Result<()> {
