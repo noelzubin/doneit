@@ -1,6 +1,6 @@
 use ratatui::text::Span;
 use ratatui::widgets::{ListState, Padding, Row, Table, TableState};
-use slotmap::DefaultKey;
+use slotmap::{DefaultKey, SlotMap};
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::{collections::HashSet, fs};
@@ -42,6 +42,10 @@ pub struct App {
     rx: mpsc::Receiver<crossterm::event::Event>,
     workspace_clipboard: Option<DefaultKey>,
     todo_clipboard: Option<DefaultKey>,
+    search_mode: bool,
+    search_str: String,
+    search_matches: Vec<DefaultKey>,
+    current_match_index: usize,
 }
 
 enum SortingItem {
@@ -68,6 +72,10 @@ impl App {
             todo_clipboard: None,
             tx,
             rx,
+            search_mode: false,
+            search_str: String::new(),
+            search_matches: Vec::new(),
+            current_match_index: 0,
         }
     }
 
@@ -260,6 +268,10 @@ impl App {
             if !todo.pending {
                 todo_desc = todo_desc.style(Style::new().fg(self.theme.text_completed).crossed_out());
                 pre_desc = pre_desc.style(Style::new().fg(Color::Green));
+            } 
+
+            if self.search_matches.contains(&t.key) {
+                todo_desc = todo_desc.style(Style::new().fg(Color::Yellow).bold());
             }
 
             let mut todo_line = Line::from(pre_desc);
@@ -294,7 +306,7 @@ impl App {
             rows.push(row);
         });
 
-        let block = self.get_title_block(" Todos ", self.active_screen == Screen::Todos);
+        let block = self.get_title_block(format!(" Todos {}", if self.search_mode { format!("(Search: {})", self.search_str) } else { String::new() }).as_str(), self.active_screen == Screen::Todos);
 
         // Render the input
         if let Some(editing_id) = self.new_editing_id {
@@ -351,8 +363,61 @@ impl App {
 
     fn handle_events(&mut self) -> Result<()> {
         let event = self.rx.recv()?;
-        self.handle_crossterm_events(event)?;
+        if let Event::Key(key) = event {
+            if key.kind == KeyEventKind::Press {
+                self.handle_crossterm_events(event)?
+            }
+        }
         Ok(())
+    }
+
+    fn update_search_matches(&mut self) {
+        self.search_matches.clear();
+        self.current_match_index = 0;
+
+        if self.search_str.is_empty() {
+            return;
+        }
+
+        if let Some(workspace_key) = self.slot_tree_state.selected_workspace {
+            let workspace = self.slot_map_store.workspaces_map.get(workspace_key).unwrap();
+            
+            // Helper function to recursively search todos
+            fn search_todos(todos_map: &SlotMap<DefaultKey, TodoItem>, todo_key: DefaultKey, search_str: &str, matches: &mut Vec<DefaultKey>,todos_containing_matches: &mut Vec<DefaultKey>) -> bool {
+                let todo = todos_map.get(todo_key).unwrap();
+
+                let mut containsMatch = false;
+
+                if todo.description.to_lowercase().contains(&search_str.to_lowercase()) {
+                    matches.push(todo_key);
+                    containsMatch = true;
+                }
+                
+                // Search in children
+                for child_key in &todo.children {
+                    if search_todos(todos_map, *child_key, search_str, matches, todos_containing_matches) {
+                        containsMatch = true;
+                    }
+                };
+
+                if containsMatch {
+                    todos_containing_matches.push(todo_key);
+                }
+                
+                return containsMatch;
+            }
+
+            // Search in workspace's direct todos
+            let mut todos_containing_matches: Vec<DefaultKey> = Vec::new();
+            for todo_key in &workspace.todos {
+                search_todos(&self.slot_map_store.todos_map, *todo_key, &self.search_str, &mut self.search_matches, &mut todos_containing_matches);
+            }
+
+            self.slot_tree_state.opened.clear();
+            for todo_key in &todos_containing_matches {
+                self.slot_tree_state.opened.insert(*todo_key);
+            }
+        }
     }
 
     fn clone_todo(&mut self, todo_key: DefaultKey) -> DefaultKey {
@@ -890,6 +955,33 @@ impl App {
     }
 
     fn handle_todos_key_event(&mut self, key: KeyEvent) {
+        if self.search_mode {
+            match key.code {
+                KeyCode::Char(c) => {
+                    self.search_str.push(c);
+                    self.update_search_matches();
+                }
+                KeyCode::Backspace => {
+                    self.search_str.pop();
+                    self.update_search_matches();
+                }
+                KeyCode::Esc | KeyCode::Enter => {
+                    self.search_mode = false;
+                    self.search_str.clear();
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        if key.code == KeyCode::Char('/') {
+            self.search_mode = true;
+            self.search_str.clear();
+            self.search_matches.clear();
+            self.current_match_index = 0;
+            return;
+        }
+
         if let SortingItem::Todo(todo_key) = self.sorting {
             match (key.modifiers, key.code) {
                 (_, KeyCode::Char('1')) => {
@@ -1301,6 +1393,12 @@ impl App {
                                 workspace.todos.swap(ind, ind + 1);
                             }
                         }
+                    }
+                }
+                (_, KeyCode::Char('n')) => {
+                    if !self.search_matches.is_empty() {
+                        self.current_match_index = (self.current_match_index + 1) % self.search_matches.len();
+                        self.slot_tree_state.selected_todo = Some(self.search_matches[self.current_match_index]);
                     }
                 }
                 _ => {}
