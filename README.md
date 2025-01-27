@@ -26,6 +26,9 @@ P           paste item as child
 + | -       increase | decrease priority
 
 C-s         open sort menu 
+
+/           search todos
+n           select next search result      
 ```
 
 # Screenshot
