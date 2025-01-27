@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json;
 use slotmap::{DefaultKey, SlotMap};
-use std::fs::{self, File};
+use std::fs::File;
 use std::io::{self, BufReader, BufWriter};
 use std::path::PathBuf;
 use std::time::SystemTime;
@@ -216,15 +216,13 @@ impl SlotMapStore {
         }
     }
 
-    pub fn get_store(&self) -> Store { 
+    pub fn get_store(&self) -> Store {
         Store {
             workspaces: self
                 .root_workspaces
                 .iter()
                 .map(|k| self.create_workspace(*k))
-                .collect()
+                .collect(),
         }
-        
     }
-
 }
