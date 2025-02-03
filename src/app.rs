@@ -120,21 +120,26 @@ impl App {
 
     fn render_footer(&mut self, frame: &mut Frame, area: Rect) {
         let mut line = Line::default();
-        match self.sorting {
-            SortingItem::None => {
-                line.push_span(Span::raw(" INSERT ").bg(Color::Green).fg(Color::Black));
-            }
-            SortingItem::Todo(_) => {
-                line.push_span(Span::raw(" Sort by: ").bg(Color::Blue).fg(self.theme.text));
-                line.push_span(Span::raw(" 1:Reverse "));
-                line.push_span(Span::raw(" 2:Description "));
-                line.push_span(Span::raw(" 3:Pending "));
-                line.push_span(Span::raw(" 4:Urgency "));
-            }
-            SortingItem::Workspace(_) => {
-                line.push_span(Span::raw(" Sort by: ").bg(Color::Cyan).fg(Color::Black));
-                line.push_span(Span::raw(" 1:Reverse "));
-                line.push_span(Span::raw(" 2:Description "));
+        if self.search_mode {
+            line.push_span(Span::raw(" Search: ").bg(Color::Blue).fg(self.theme.text));
+            line.push_span(Span::raw(format!(" {}", &self.search_str)));
+        } else {
+            match self.sorting {
+                SortingItem::None => {
+                    line.push_span(Span::raw(" INSERT ").bg(Color::Green).fg(Color::Black));
+                }
+                SortingItem::Todo(_) => {
+                    line.push_span(Span::raw(" Sort by: ").bg(Color::Blue).fg(self.theme.text));
+                    line.push_span(Span::raw(" 1:Reverse "));
+                    line.push_span(Span::raw(" 2:Description "));
+                    line.push_span(Span::raw(" 3:Pending "));
+                    line.push_span(Span::raw(" 4:Urgency "));
+                }
+                SortingItem::Workspace(_) => {
+                    line.push_span(Span::raw(" Sort by: ").bg(Color::Cyan).fg(Color::Black));
+                    line.push_span(Span::raw(" 1:Reverse "));
+                    line.push_span(Span::raw(" 2:Description "));
+                }
             }
         }
 
@@ -307,11 +312,7 @@ impl App {
             rows.push(row);
         });
 
-        let todos_title = if self.search_mode {
-            format!(" Search: {} ", self.search_str)
-        } else {
-            " Todos ".to_string()
-        };
+        let todos_title = " Todos ".to_string();
 
         let block = self.get_title_block(
             todos_title.as_str(),
