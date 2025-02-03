@@ -1,8 +1,8 @@
 `store.js` holds the main datastructure for the application that is serialized to stored in the json file.
 
-But this isnt the most efficient data structure when using the app. So these are then converted from and into these structures when the app is running.   
+However, this may not be the most efficient data structure for runtime use; therefore, it is converted into more optimized structures when the app is running.
 
 `SlotMapStore`
-This holds all the workspaces and todos in a `SlotMap`. This makes it easier to working with the tree structure without wrestling too much with the borrow checker. This is the main datastructure, this is what is modified and read and what is converted to a `Store` type and written to the json file when the app is closed.
+This structure holds all the workspaces and to-dos in a `SlotMap`, facilitating easier manipulation of the tree structure without excessive effort against the borrow checker. It represents the primary data structure, which is modified, read, and later converted to a `Store` type for writing back to the JSON file upon application closure.
 
-There is also `SlotTreeState` which stores the state of the trees rendered in the app ui. The tree datastructure holds references to keys of the workspaces and todos and also some extra properties like `parent` ,`depth` etc. This comes in handy when you want to say `move item down the ui` or `focus previous item` etc. 
+There is also `SlotTreeState`, which stores the state of the trees rendered in the app UI. The tree data structure holds references to keys of the workspaces and to-dos, along with additional properties such as `parent` and `depth`. These properties prove useful when implementing actions like moving an item down in the UI or focusing on the previous item.
