@@ -1021,6 +1021,9 @@ impl App {
 
         if let SortingItem::Todo(todo_key) = self.sorting {
             match (key.modifiers, key.code) {
+                // 1 is for reverse. If top todo ise selcted then reverse all
+                // the todos in the workspace. Else reverse all the todos in the
+                // parent todo.
                 (_, KeyCode::Char('1')) => {
                     let parent_key = self
                         .slot_tree_state
@@ -1057,7 +1060,8 @@ impl App {
 
                     self.sorting = SortingItem::None;
                 }
-                (_, KeyCode::Char(n @ '2'..'5')) => {
+                (_, KeyCode::Char(n)) => {
+
                     let parent_key = self
                         .slot_tree_state
                         .todo_tree
@@ -1096,9 +1100,9 @@ impl App {
                         let mut children = self
                             .slot_map_store
                             .workspaces_map
-                            .get_mut(self.slot_tree_state.selected_workspace.unwrap())
+                            .get(self.slot_tree_state.selected_workspace.unwrap())
                             .unwrap()
-                            .children
+                            .todos
                             .clone();
 
                         children.sort_by(|a, b| {
@@ -1117,7 +1121,7 @@ impl App {
                             .workspaces_map
                             .get_mut(self.slot_tree_state.selected_workspace.unwrap())
                             .unwrap()
-                            .children = children;
+                            .todos = children;
                     }
 
                     self.sorting = SortingItem::None;
