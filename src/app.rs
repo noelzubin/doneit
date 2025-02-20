@@ -98,6 +98,20 @@ impl App {
         self.slot_map_store.get_store()
     }
 
+    pub fn sort_todos(&mut self, todos: &mut Vec<DefaultKey>, n: char) {
+        todos.sort_by(|a, b| {
+            let a = self.slot_map_store.todos_map.get(*a).unwrap();
+            let b = self.slot_map_store.todos_map.get(*b).unwrap();
+
+            match n {
+                '2' => a.description.cmp(&b.description),
+                '3' => a.pending.cmp(&b.pending),
+                '4' => a.urgency.cmp(&b.urgency),
+                _ => a.description.cmp(&b.description),
+            }
+        });
+    }
+
     /// Renders the user interface.
     ///
     /// This is where you add new widgets. See the following resources for more information:
@@ -314,10 +328,7 @@ impl App {
 
         let todos_title = " Todos ".to_string();
 
-        let block = self.get_title_block(
-            todos_title.as_str(),
-            self.active_screen == Screen::Todos,
-        );
+        let block = self.get_title_block(todos_title.as_str(), self.active_screen == Screen::Todos);
 
         // Render the input
         if let Some(editing_id) = self.new_editing_id {
@@ -1061,7 +1072,6 @@ impl App {
                     self.sorting = SortingItem::None;
                 }
                 (_, KeyCode::Char(n)) => {
-
                     let parent_key = self
                         .slot_tree_state
                         .todo_tree
@@ -1079,17 +1089,7 @@ impl App {
                             .children
                             .clone();
 
-                        children.sort_by(|a, b| {
-                            let a = self.slot_map_store.todos_map.get(*a).unwrap();
-                            let b = self.slot_map_store.todos_map.get(*b).unwrap();
-
-                            match n {
-                                '2' => a.description.cmp(&b.description),
-                                '3' => a.pending.cmp(&b.pending),
-                                '4' => a.urgency.cmp(&b.urgency),
-                                _ => a.description.cmp(&b.description),
-                            }
-                        });
+                        self.sort_todos(&mut children, n);
 
                         self.slot_map_store
                             .todos_map
@@ -1105,17 +1105,7 @@ impl App {
                             .todos
                             .clone();
 
-                        children.sort_by(|a, b| {
-                            let a = self.slot_map_store.todos_map.get(*a).unwrap();
-                            let b = self.slot_map_store.todos_map.get(*b).unwrap();
-
-                            match n {
-                                '2' => a.description.cmp(&b.description),
-                                '3' => a.pending.cmp(&b.pending),
-                                '4' => a.urgency.cmp(&b.urgency),
-                                _ => a.description.cmp(&b.description),
-                            }
-                        });
+                        self.sort_todos(&mut children, n);
 
                         self.slot_map_store
                             .workspaces_map
