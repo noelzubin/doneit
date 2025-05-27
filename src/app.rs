@@ -39,8 +39,8 @@ pub struct App {
     sorting: SortingItem,
     tx: mpsc::Sender<crossterm::event::Event>,
     rx: mpsc::Receiver<crossterm::event::Event>,
-    workspace_clipboard: Option<DefaultKey>,
-    todo_clipboard: Option<DefaultKey>,
+    clipboard_todos: Vec<DefaultKey>,
+    clipboard_workspaces: Vec<DefaultKey>,
     search_mode: bool,
     search_str: String,
     search_matches: Vec<DefaultKey>,
@@ -67,8 +67,8 @@ impl App {
             input: Input::default(),
             sorting: SortingItem::None,
             active_screen: Screen::Workspaces,
-            workspace_clipboard: None,
-            todo_clipboard: None,
+            clipboard_todos: Vec::new(),
+            clipboard_workspaces: Vec::new(),
             tx,
             rx,
             search_mode: false,
@@ -166,7 +166,7 @@ impl App {
         self.slot_tree_state.ws_tree.iter().for_each(|w| {
             let workspace = self.slot_map_store.workspaces_map.get(w.key).unwrap();
             let mut item = ListItem::new(format!(
-                "{}{} {}",
+                "{}{}{}",
                 "  ".repeat(w.depth),
                 workspace.description.clone(),
                 if workspace.children.is_empty() || self.slot_tree_state.ws_opened.contains(&w.key)
@@ -177,16 +177,23 @@ impl App {
                 }
             ));
 
+            let mut item_style = Style::default();
             if let Some(selected) = self.slot_tree_state.selected_workspace {
                 if selected == w.key {
-                    item = item.style(
-                        Style::default()
-                            .fg(self.theme.text)
-                            .bg(self.theme.item_highlight),
-                    );
+                    item_style = item_style.fg(self.theme.text).bg(self.theme.item_highlight);
                 }
             }
 
+            // Highlight multi-selected items
+            if self
+                .slot_tree_state
+                .multi_selected_workspaces
+                .contains(&w.key)
+            {
+                item_style = item_style.fg(Color::Yellow);
+            }
+
+            item = item.style(item_style);
             items.push(item);
         });
 
@@ -316,12 +323,20 @@ impl App {
             let mut priority = Line::from(PRIORITIES[todo.urgency as usize]);
             priority = priority.style(Style::new().fg(PRIORITY_COLORS[todo.urgency as usize]));
 
+            let mut row_style = Style::default();
             let mut row = Row::new(vec![todo_line, priority.into()]);
             if let Some(selected) = self.slot_tree_state.selected_todo {
                 if selected == t.key {
-                    row = row.style(Style::default().bg(self.theme.item_highlight));
+                    row_style = row_style.bg(self.theme.item_highlight);
                 }
             }
+
+            // Highlight multi-selected items
+            if self.slot_tree_state.multi_selected_todos.contains(&t.key) {
+                row_style = row_style.fg(Color::Yellow);
+            }
+
+            row = row.style(row_style);
 
             rows.push(row);
         });
@@ -615,6 +630,9 @@ impl App {
                     .key,
             );
         }
+
+        // Clear multi-selection when workspace changes due to deletion
+        self.clear_multi_selection_when_workspace_changes();
     }
 
     fn paste_workspace_as_child(&mut self, key: DefaultKey, selected: DefaultKey) {
@@ -732,6 +750,7 @@ impl App {
                 (_, KeyCode::Tab) => self.active_screen = Screen::Todos,
 
                 (_, KeyCode::Char('j')) => {
+                    let old_workspace = self.slot_tree_state.selected_workspace;
                     if let Some(selected) = self.slot_tree_state.selected_workspace {
                         let index = self
                             .slot_tree_state
@@ -748,9 +767,15 @@ impl App {
                             self.slot_tree_state.ws_tree.first().map(|w| w.key);
                     }
                     self.slot_tree_state.selected_todo = None;
+
+                    // Clear multi-selection when workspace changes
+                    if old_workspace != self.slot_tree_state.selected_workspace {
+                        self.clear_multi_selection_when_workspace_changes();
+                    }
                 }
 
                 (_, KeyCode::Char('k')) => {
+                    let old_workspace = self.slot_tree_state.selected_workspace;
                     if let Some(selected) = self.slot_tree_state.selected_workspace {
                         let index = self
                             .slot_tree_state
@@ -764,6 +789,11 @@ impl App {
                         }
                     }
                     self.slot_tree_state.selected_todo = None;
+
+                    // Clear multi-selection when workspace changes
+                    if old_workspace != self.slot_tree_state.selected_workspace {
+                        self.clear_multi_selection_when_workspace_changes();
+                    }
                 }
 
                 (_, KeyCode::Char('K')) => {
@@ -939,61 +969,62 @@ impl App {
                 }
 
                 (_, KeyCode::Char('y')) => {
-                    if let Some(selected) = self.slot_tree_state.selected_workspace {
-                        self.workspace_clipboard = Some(selected);
+                    if !self.slot_tree_state.multi_selected_workspaces.is_empty() {
+                        // Copy multi-selected workspaces to clipboard
+                        self.clipboard_workspaces = self
+                            .slot_tree_state
+                            .multi_selected_workspaces
+                            .iter()
+                            .cloned()
+                            .collect();
+                    } else if let Some(selected) = self.slot_tree_state.selected_workspace {
+                        // Copy single workspace to clipboard
+                        self.clipboard_workspaces = vec![selected];
                     }
                 }
 
                 (_, KeyCode::Char('p')) => {
-                    if let Some(clipboard_ws_key) = self.workspace_clipboard {
-                        let new_workspace_key = self.clone_workspace(clipboard_ws_key);
-
-                        if let Some(selected) = self.slot_tree_state.selected_workspace {
-                            let workspace = self
-                                .slot_tree_state
-                                .ws_tree
-                                .iter()
-                                .find(|w| w.key == selected)
-                                .unwrap();
-
-                            if let Some(parent) = workspace.parent {
-                                let parent =
-                                    self.slot_map_store.workspaces_map.get_mut(parent).unwrap();
-                                parent.children.insert(
-                                    parent.children.iter().position(|w| w == &selected).unwrap()
-                                        + 1,
-                                    new_workspace_key,
-                                );
-                            } else {
-                                self.slot_map_store.root_workspaces.insert(
-                                    self.slot_map_store
-                                        .root_workspaces
-                                        .iter()
-                                        .position(|w| w == &selected)
-                                        .unwrap()
-                                        + 1,
-                                    new_workspace_key,
-                                );
-                            }
-                        } else {
-                            self.slot_map_store.root_workspaces.push(new_workspace_key);
-                        }
+                    if !self.clipboard_workspaces.is_empty() {
+                        self.paste_multi_selected_workspaces_at_cursor();
                     }
                 }
 
                 (_, KeyCode::Char('P')) => {
-                    if let (Some(clipboard_ws_key), Some(selected)) = (
-                        self.workspace_clipboard,
-                        self.slot_tree_state.selected_workspace,
-                    ) {
-                        self.paste_workspace_as_child(clipboard_ws_key, selected);
+                    // Note that P is only supported for single workspace paste.
+                    if !self.clipboard_workspaces.is_empty() {
+                        if let Some(selected) = self.slot_tree_state.selected_workspace {
+                            // Paste the first workspace from clipboard as child
+                            let clipboard_ws_key = self.clipboard_workspaces[0];
+                            self.paste_workspace_as_child(clipboard_ws_key, selected);
+                        }
                     }
                 }
 
                 (_, KeyCode::Char('x')) => {
-                    if let Some(selected) = self.slot_tree_state.selected_workspace {
-                        self.workspace_clipboard = Some(selected);
+                    if !self.slot_tree_state.multi_selected_workspaces.is_empty() {
+                        self.cut_multi_selected_workspaces();
+                    } else if let Some(selected) = self.slot_tree_state.selected_workspace {
+                        self.clipboard_workspaces = vec![selected];
                         self.delete_workspace(selected);
+                    }
+                }
+
+                (_, KeyCode::Char(' ')) => {
+                    // Toggle multi-selection for current workspace
+                    if let Some(selected) = self.slot_tree_state.selected_workspace {
+                        if self
+                            .slot_tree_state
+                            .multi_selected_workspaces
+                            .contains(&selected)
+                        {
+                            self.slot_tree_state
+                                .multi_selected_workspaces
+                                .remove(&selected);
+                        } else {
+                            self.slot_tree_state
+                                .multi_selected_workspaces
+                                .insert(selected);
+                        }
                     }
                 }
 
@@ -1300,63 +1331,41 @@ impl App {
                     }
                 }
                 (_, KeyCode::Char('y')) => {
-                    if let Some(selected) = self.slot_tree_state.selected_todo {
-                        self.todo_clipboard = Some(selected);
+                    if !self.slot_tree_state.multi_selected_todos.is_empty() {
+                        // Copy multi-selected todos to clipboard
+                        self.clipboard_todos = self
+                            .slot_tree_state
+                            .multi_selected_todos
+                            .iter()
+                            .cloned()
+                            .collect();
+                    } else if let Some(selected) = self.slot_tree_state.selected_todo {
+                        // Copy single todo to clipboard
+                        self.clipboard_todos = vec![selected];
                     }
                 }
 
                 (_, KeyCode::Char('p')) => {
-                    if let Some(clipboard_key) = self.todo_clipboard {
-                        let new_todo_key = self.clone_todo(clipboard_key);
-                        if let Some(selected) = self.slot_tree_state.selected_todo {
-                            let todo_tree_item = self
-                                .slot_tree_state
-                                .todo_tree
-                                .iter()
-                                .find(|w| w.key == selected)
-                                .unwrap();
-
-                            if let Some(parent) = todo_tree_item.parent {
-                                let parent = self.slot_map_store.todos_map.get_mut(parent).unwrap();
-                                parent.children.insert(
-                                    parent.children.iter().position(|w| w == &selected).unwrap()
-                                        + 1,
-                                    new_todo_key,
-                                );
-                            } else {
-                                let workspace = self
-                                    .slot_map_store
-                                    .workspaces_map
-                                    .get_mut(self.slot_tree_state.selected_workspace.unwrap())
-                                    .unwrap();
-                                workspace.todos.insert(
-                                    workspace.todos.iter().position(|w| w == &selected).unwrap()
-                                        + 1,
-                                    new_todo_key,
-                                );
-                            }
-                        } else {
-                            let workspace = self
-                                .slot_map_store
-                                .workspaces_map
-                                .get_mut(self.slot_tree_state.selected_workspace.unwrap())
-                                .unwrap();
-                            workspace.todos.push(new_todo_key);
-                        }
+                    if !self.clipboard_todos.is_empty() {
+                        self.paste_multi_selected_todos_at_cursor();
                     }
                 }
 
                 (_, KeyCode::Char('P')) => {
-                    if let (Some(clipboard_key), Some(selected)) =
-                        (self.todo_clipboard, self.slot_tree_state.selected_todo)
-                    {
-                        self.paste_todo_as_child(clipboard_key, selected);
+                    if !self.clipboard_todos.is_empty() {
+                        if let Some(selected) = self.slot_tree_state.selected_todo {
+                            // Paste the first todo from clipboard as child
+                            let clipboard_key = self.clipboard_todos[0];
+                            self.paste_todo_as_child(clipboard_key, selected);
+                        }
                     }
                 }
 
                 (_, KeyCode::Char('x')) => {
-                    if let Some(selected) = self.slot_tree_state.selected_todo {
-                        self.todo_clipboard = Some(selected);
+                    if !self.slot_tree_state.multi_selected_todos.is_empty() {
+                        self.cut_multi_selected_todos();
+                    } else if let Some(selected) = self.slot_tree_state.selected_todo {
+                        self.clipboard_todos.push(selected);
                         self.delete_todo(selected);
                     }
                 }
@@ -1426,6 +1435,22 @@ impl App {
                         }
                     }
                 }
+
+                (_, KeyCode::Char(' ')) => {
+                    // Toggle multi-selection for current todo
+                    if let Some(selected) = self.slot_tree_state.selected_todo {
+                        if self
+                            .slot_tree_state
+                            .multi_selected_todos
+                            .contains(&selected)
+                        {
+                            self.slot_tree_state.multi_selected_todos.remove(&selected);
+                        } else {
+                            self.slot_tree_state.multi_selected_todos.insert(selected);
+                        }
+                    }
+                }
+
                 (_, KeyCode::Char('n')) => {
                     if !self.search_matches.is_empty() {
                         self.current_match_index =
@@ -1481,6 +1506,215 @@ impl App {
     }
 
     // FIXME: YOU can use references here for tree. Perfomance
+
+    // Multi-selection helper methods
+    fn cut_multi_selected_todos(&mut self) {
+        if self.slot_tree_state.multi_selected_todos.is_empty() {
+            return;
+        }
+
+        // Copy selected todos to clipboard
+        self.clipboard_todos = self
+            .slot_tree_state
+            .multi_selected_todos
+            .iter()
+            .cloned()
+            .collect();
+
+        // Delete all selected todos without updating selection state
+        self.clipboard_todos.clone().iter().for_each(|key| {
+            self.delete_todo(*key);
+        });
+
+        // Clear multi-selection state
+        self.slot_tree_state.multi_selected_todos.clear();
+    }
+
+    fn cut_multi_selected_workspaces(&mut self) {
+        if self.slot_tree_state.multi_selected_workspaces.is_empty() {
+            return;
+        }
+
+        // Copy selected workspaces to clipboard
+        self.clipboard_workspaces = self
+            .slot_tree_state
+            .multi_selected_workspaces
+            .iter()
+            .cloned()
+            .collect();
+
+        self.clipboard_workspaces.clone().iter().for_each(|key| {
+            self.delete_workspace(*key);
+        });
+
+        // Clear multi-selection state
+        self.slot_tree_state.multi_selected_workspaces.clear();
+    }
+
+    fn paste_multi_selected_todos_at_cursor(&mut self) {
+        if self.clipboard_todos.is_empty() {
+            return;
+        }
+
+        // First, collect all todo keys to clone
+        let todo_keys_to_clone: Vec<DefaultKey> = self.clipboard_todos.clone();
+
+        // Clone todos first to avoid borrowing issues
+        let mut cloned_todos = Vec::new();
+        for todo_key in todo_keys_to_clone {
+            cloned_todos.push(self.clone_todo(todo_key));
+        }
+
+        if let Some(selected) = self.slot_tree_state.selected_todo {
+            // Collect tree info before making mutations
+            let parent_key = self
+                .slot_tree_state
+                .todo_tree
+                .iter()
+                .find(|w| w.key == selected)
+                .map(|item| item.parent);
+
+            if let Some(Some(parent)) = parent_key {
+                // Find insertion point in parent's children
+                let insertion_point = self
+                    .slot_map_store
+                    .todos_map
+                    .get(parent)
+                    .unwrap()
+                    .children
+                    .iter()
+                    .position(|w| w == &selected)
+                    .unwrap()
+                    + 1;
+
+                // Insert all cloned todos into parent's children
+                let parent_todo = self.slot_map_store.todos_map.get_mut(parent).unwrap();
+                for (index, new_todo_key) in cloned_todos.iter().enumerate() {
+                    parent_todo
+                        .children
+                        .insert(insertion_point + index, *new_todo_key);
+                }
+            } else {
+                // Selected todo is at workspace level
+                let workspace_key = self.slot_tree_state.selected_workspace.unwrap();
+                let insertion_point = self
+                    .slot_map_store
+                    .workspaces_map
+                    .get(workspace_key)
+                    .unwrap()
+                    .todos
+                    .iter()
+                    .position(|w| w == &selected)
+                    .unwrap()
+                    + 1;
+
+                // Insert all cloned todos into workspace
+                let workspace = self
+                    .slot_map_store
+                    .workspaces_map
+                    .get_mut(workspace_key)
+                    .unwrap();
+                for (index, new_todo_key) in cloned_todos.iter().enumerate() {
+                    workspace
+                        .todos
+                        .insert(insertion_point + index, *new_todo_key);
+                }
+            }
+        } else {
+            // No cursor position, paste at end of workspace
+            let workspace_key = self.slot_tree_state.selected_workspace.unwrap();
+            let workspace = self
+                .slot_map_store
+                .workspaces_map
+                .get_mut(workspace_key)
+                .unwrap();
+            for new_todo_key in cloned_todos {
+                workspace.todos.push(new_todo_key);
+            }
+        }
+
+        self.slot_tree_state.multi_selected_todos.clear();
+
+        // Update tree state
+        self.slot_tree_state
+            .update_workspace_tree_state(&self.slot_map_store);
+    }
+
+    fn paste_multi_selected_workspaces_at_cursor(&mut self) {
+        if self.clipboard_workspaces.is_empty() {
+            return;
+        }
+
+        // First, clone all workspaces to avoid borrowing issues
+        let workspace_keys_to_clone: Vec<DefaultKey> = self.clipboard_workspaces.clone();
+        let mut cloned_workspaces = Vec::new();
+        for workspace_key in workspace_keys_to_clone {
+            cloned_workspaces.push(self.clone_workspace(workspace_key));
+        }
+
+        if let Some(selected) = self.slot_tree_state.selected_workspace {
+            // Collect parent info first
+            let parent_key = self
+                .slot_tree_state
+                .ws_tree
+                .iter()
+                .find(|w| w.key == selected)
+                .map(|workspace| workspace.parent);
+
+            if let Some(Some(parent)) = parent_key {
+                // Find insertion point in parent's children
+                let insertion_point = self
+                    .slot_map_store
+                    .workspaces_map
+                    .get(parent)
+                    .unwrap()
+                    .children
+                    .iter()
+                    .position(|w| w == &selected)
+                    .unwrap()
+                    + 1;
+
+                // Insert all cloned workspaces
+                let parent_workspace = self.slot_map_store.workspaces_map.get_mut(parent).unwrap();
+                for (index, new_workspace_key) in cloned_workspaces.iter().enumerate() {
+                    parent_workspace
+                        .children
+                        .insert(insertion_point + index, *new_workspace_key);
+                }
+            } else {
+                // Selected workspace is at root level
+                let insertion_point = self
+                    .slot_map_store
+                    .root_workspaces
+                    .iter()
+                    .position(|w| w == &selected)
+                    .unwrap()
+                    + 1;
+
+                // Insert all cloned workspaces
+                for (index, new_workspace_key) in cloned_workspaces.iter().enumerate() {
+                    self.slot_map_store
+                        .root_workspaces
+                        .insert(insertion_point + index, *new_workspace_key);
+                }
+            }
+        } else {
+            // No cursor position, paste at end of root
+            for new_workspace_key in cloned_workspaces {
+                self.slot_map_store.root_workspaces.push(new_workspace_key);
+            }
+        }
+
+        self.slot_tree_state.multi_selected_workspaces.clear();
+
+        // Update tree state
+        self.slot_tree_state
+            .update_workspace_tree_state(&self.slot_map_store);
+    }
+
+    fn clear_multi_selection_when_workspace_changes(&mut self) {
+        self.slot_tree_state.multi_selected_todos.clear();
+    }
 }
 
 fn get_crossterm_events(tx: mpsc::Sender<crossterm::event::Event>) -> Result<()> {
@@ -1505,6 +1739,8 @@ struct SlotTreeState {
     pub todo_opened: HashSet<DefaultKey>,
     pub ws_tree: Vec<ActiveTree>,
     pub todo_tree: Vec<ActiveTree>,
+    pub multi_selected_todos: HashSet<DefaultKey>,
+    pub multi_selected_workspaces: HashSet<DefaultKey>,
 }
 
 impl SlotTreeState {
