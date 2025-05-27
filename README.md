@@ -29,6 +29,8 @@ C-s         open sort menu
 
 /           search todos
 n           select next search result      
+
+<space>     select multiple items. 
 ```
 
 # Screenshot
