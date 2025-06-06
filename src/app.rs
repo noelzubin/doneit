@@ -1004,6 +1004,7 @@ impl App {
                     if !self.slot_tree_state.multi_selected_workspaces.is_empty() {
                         self.cut_multi_selected_workspaces();
                     } else if let Some(selected) = self.slot_tree_state.selected_workspace {
+                        self.clipboard_workspaces.clear();
                         self.clipboard_workspaces = vec![selected];
                         self.delete_workspace(selected);
                     }
@@ -1365,6 +1366,7 @@ impl App {
                     if !self.slot_tree_state.multi_selected_todos.is_empty() {
                         self.cut_multi_selected_todos();
                     } else if let Some(selected) = self.slot_tree_state.selected_todo {
+                        self.clipboard_todos.clear();
                         self.clipboard_todos.push(selected);
                         self.delete_todo(selected);
                     }
@@ -1513,7 +1515,8 @@ impl App {
             return;
         }
 
-        // Copy selected todos to clipboard
+        // Clear existing clipboard before copying selected todos
+        self.clipboard_todos.clear();
         self.clipboard_todos = self
             .slot_tree_state
             .multi_selected_todos
@@ -1535,7 +1538,8 @@ impl App {
             return;
         }
 
-        // Copy selected workspaces to clipboard
+        // Clear existing clipboard before copying selected workspaces
+        self.clipboard_workspaces.clear();
         self.clipboard_workspaces = self
             .slot_tree_state
             .multi_selected_workspaces
